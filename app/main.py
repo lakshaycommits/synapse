@@ -4,10 +4,20 @@ from tempfile import NamedTemporaryFile
 from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
-from app.rag.ingest import ingest
+from rag.ingest import Ingestion
+from rag.retriever import get_retriever
+from utils.embeddings import embeddings
 
 app = FastAPI(title="Synapse")
+
+class RetrieveRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="Question to run against the vector store")
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 @app.post("/rag/ingest")
 async def rag_ingest(
@@ -29,7 +39,7 @@ async def rag_ingest(
             upload.file.close()
             tmp_paths.append(Path(tmp.name))
 
-        chunks = ingest(tmp_paths)
+        chunks = Ingestion.ingest(tmp_paths)
         return {
             "chunks_indexed": chunks,
             "filenames": [f.filename for f in files],
@@ -37,3 +47,12 @@ async def rag_ingest(
     finally:
         for p in tmp_paths:
             p.unlink(missing_ok=True)
+
+@app.post("/retrieve")
+async def retrieve(body: RetrieveRequest):
+    retriever = get_retriever(embeddings.instance())
+    docs = retriever.invoke(body.query)
+    return {
+        "query": body.query,
+        "chunks": [{"page_content": d.page_content, "metadata": d.metadata} for d in docs],
+    }
