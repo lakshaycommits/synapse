@@ -26,10 +26,10 @@ from models.request import QueryRequest
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.graph = build_graph()
     app.state.qdrant = qdrantClient()
     app.state.embeddings = Embeddings()
     app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
+    app.state.graph = build_graph(app.state.retriever)
     yield
     app.state.qdrant._close_qrant_client()
 
