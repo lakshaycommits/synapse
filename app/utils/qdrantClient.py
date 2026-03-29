@@ -36,5 +36,3 @@ class qdrantClient:
             collection_name=self.COLLECTION_NAME,
             embedding=embeddings,
         )
-
-qdrant = qdrantClient()

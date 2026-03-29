@@ -10,5 +10,3 @@ class Embeddings:
 
     def instance(self) -> HuggingFaceEmbeddings:
         return self._instance
-
-embeddings = Embeddings()

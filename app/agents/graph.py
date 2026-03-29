@@ -38,5 +38,3 @@ def build_graph():
     graph.add_edge(START, "router")
     graph.add_edge("router", END)
     return graph.compile()
-
-synapse_graph = build_graph()
