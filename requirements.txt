@@ -11,3 +11,4 @@ python-dotenv
 sentence-transformers
 pypdf
 python-multipart
+aiokafka

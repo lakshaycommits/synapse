@@ -18,20 +18,29 @@ from rag.retriever import create_retriever
 
 # utils imports
 from utils.qdrantClient import qdrantClient
-from utils.dependencies import get_graph, get_qdrant, get_retriever, get_embeddings
+from utils.dependencies import get_graph, get_producer, get_qdrant, get_embeddings
 from utils.embeddings import Embeddings
 
 # models imports
 from models.request import QueryRequest
 
+# kafka imports
+from kafka.producer import Producer
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    producer = Producer()
+    await producer.start()
+    app.state.producer = producer
+
     app.state.qdrant = qdrantClient()
     app.state.embeddings = Embeddings()
     app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
     app.state.graph = build_graph(app.state.retriever)
+
     yield
     app.state.qdrant._close_qrant_client()
+    await producer.stop()
 
 app = FastAPI(title="Synapse", lifespan = lifespan)
 
@@ -44,6 +53,7 @@ async def rag_ingest(
     files: Annotated[list[UploadFile], File(description="PDF, .txt, or .md")],
     qdrant: Annotated[qdrantClient, Depends(get_qdrant)],
     embeddings: Annotated[Embeddings, Depends(get_embeddings)],
+    producer: Annotated[Producer, Depends(get_producer)],
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -61,36 +71,22 @@ async def rag_ingest(
             upload.file.close()
             tmp_paths.append(Path(tmp.name))
 
-        chunks = Ingestion.ingest(tmp_paths, qdrant, embeddings)
+        for path in tmp_paths:
+            await producer.publish_ingest_event(str(path), path.name)
+
         return {
-            "chunks_indexed": chunks,
+            "message": "files queued for ingestion",
             "filenames": [f.filename for f in files],
         }
 
     finally:
-        for p in tmp_paths:
-            p.unlink(missing_ok=True)
-
-@app.post("/retrieve")
-async def retrieve(
-    body: QueryRequest,
-    retriever: Annotated[Any, Depends(get_retriever)],
-):
-    docs = retriever.invoke(body.query)
-    return {
-        "query": body.query,
-        "chunks": [{"page_content": d.page_content, "metadata": d.metadata} for d in docs],
-    }
-
+        pass
 
 @app.post("/agents/query")
 async def agent_query(
     body: QueryRequest,
     graph: Annotated[Any, Depends(get_graph)],
 ):
-
-    """Run the router graph (classifies query as index / web / general)."""
-
     def _invoke():
         return graph.invoke({"query": body.query})
 
