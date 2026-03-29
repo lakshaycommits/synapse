@@ -1,3 +1,57 @@
+# --- Python Basics ---
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+
+# --- Environments ---
+.venv/
+venv/
+ENV/
+env/
 .env
 .venv
+
+# --- FastAPI / Uvicorn ---
+# If you use a local socket for uvicorn
+uvicorn.sock
+
+# --- Environment Variables ---
+# NEVER commit your actual .env file
+.env
+.env.py
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# --- Package Managers ---
+# If using Poetry
+.venv
+dist/
+
+# If using PDM
+.pdm-python
+.pdm-build/
+
+# --- Testing & Coverage ---
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+htmlcov/
+.results.xml
+
+# --- IDEs & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+
+
+# --- project specific files ---
 test_files
