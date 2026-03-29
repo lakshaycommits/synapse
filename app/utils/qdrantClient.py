@@ -29,6 +29,9 @@ class qdrantClient:
     def _get_collection_name(self):
         return self.COLLECTION_NAME
 
+    def _get_instance(self):
+        return self._instance
+
     def _get_vector_store(self, embeddings) -> QdrantVectorStore:
         self._ensure_collection(self.COLLECTION_NAME, embeddings)
         return QdrantVectorStore(
@@ -36,3 +39,6 @@ class qdrantClient:
             collection_name=self.COLLECTION_NAME,
             embedding=embeddings,
         )
+
+    def _close_qrant_client(self):
+        self._get_instance().close()

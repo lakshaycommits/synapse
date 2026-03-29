@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     app.state.embeddings = Embeddings()
     app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
     yield
-    app.state.qdrant.close()
+    app.state.qdrant._close_qrant_client()
 
 app = FastAPI(title="Synapse", lifespan = lifespan)
 

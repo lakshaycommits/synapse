@@ -5,6 +5,7 @@ from pathlib import Path
 
 from utils import qdrantClient
 from utils.embeddings import Embeddings
+from utils.helper_functions import _get_doc_hash
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -48,9 +49,46 @@ class Ingestion:
 
         docs = Ingestion.load_documents(paths)
         splits = Ingestion.split_documents(docs)
+
+        new_splits = Ingestion.check_duplication(qdrant, splits)
+        
+        if not new_splits:
+            print("No new chunks to index")
+            return 0
+
         vector_store = qdrant._get_vector_store(embeddings.instance())
         vector_store.add_documents(splits)
 
         print(f"Indexed {len(splits)} chunk(s) into Qdrant collection {qdrant._get_collection_name()!r}")
         print("Ingestion complete")
         return len(splits)
+
+    @staticmethod
+    def _get_existing_hashes(qdrant: qdrantClient) -> set:
+        try:
+            results = qdrant._get_instance().scroll(
+                collection_name=os.getenv("QDRANT_COLLECTION"),
+                with_payload=True,
+                limit=10000
+            )
+
+            return {
+                point.payload.get("metadata", {}).get("hash")
+                for point in results[0]
+                if point.payload.get("metadata", {}).get("hash")
+            }
+        except:
+            return set()
+
+    @staticmethod
+    def check_duplication(qdrant, splits) -> []:
+        existing = Ingestion._get_existing_hashes(qdrant)
+        new_splits = []
+
+        for doc in splits:
+            doc_hash = _get_doc_hash(doc.page_content)
+            if doc_hash not in existing:
+                doc.metadata["hash"] = doc_hash
+                new_splits.append(doc)
+
+        return new_splits
