@@ -12,3 +12,4 @@ sentence-transformers
 pypdf
 python-multipart
 aiokafka
+redis==5.3.1

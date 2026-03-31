@@ -5,9 +5,14 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Annotated, Any
 from contextlib import asynccontextmanager
+import os
 
 # python packages imports
 from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
+from langchain_core.globals import set_llm_cache
+from langchain_community.cache import RedisSemanticCache
+from dotenv import load_dotenv
+load_dotenv()
 
 # graph imports
 from agents.graph import build_graph
@@ -37,6 +42,11 @@ async def lifespan(app: FastAPI):
     app.state.embeddings = Embeddings()
     app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
     app.state.graph = build_graph(app.state.retriever)
+
+    set_llm_cache(RedisSemanticCache(
+        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+        embedding=app.state.embeddings.instance()
+    ))
 
     yield
     app.state.qdrant._close_qrant_client()
