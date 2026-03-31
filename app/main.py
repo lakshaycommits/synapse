@@ -8,10 +8,14 @@ from contextlib import asynccontextmanager
 import os
 
 # python packages imports
-from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Depends
 from langchain_core.globals import set_llm_cache
 from langchain_community.cache import RedisSemanticCache
 from dotenv import load_dotenv
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 load_dotenv()
 
 # graph imports
@@ -43,6 +47,15 @@ async def lifespan(app: FastAPI):
     app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
     app.state.graph = build_graph(app.state.retriever)
 
+    app.state.limiter = limiter
+    app.add_exception_handler(
+        RateLimitExceeded,
+        lambda request, exc: JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"}
+        ),
+    )
+
     set_llm_cache(RedisSemanticCache(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
         embedding=app.state.embeddings.instance()
@@ -52,6 +65,7 @@ async def lifespan(app: FastAPI):
     app.state.qdrant._close_qrant_client()
     await producer.stop()
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Synapse", lifespan = lifespan)
 
 @app.get("/health")
@@ -93,8 +107,10 @@ async def rag_ingest(
         pass
 
 @app.post("/agents/query")
+@limiter.limit("5/minute")
 async def agent_query(
     body: QueryRequest,
+    request: Request,
     graph: Annotated[Any, Depends(get_graph)],
 ):
     def _invoke():
