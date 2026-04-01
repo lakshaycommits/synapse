@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import redis
 from fastapi.responses import JSONResponse
 load_dotenv()
 
@@ -80,8 +81,50 @@ async def log_requests(request, call_next):
     return response
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+def health_check(
+    qdrant: Annotated[qdrantClient, Depends(get_qdrant)]
+):
+    status = {}
+
+    # Qdrant
+    try:
+        qdrant._get_collection_name()
+        status["qdrant"] = "up"
+    except Exception as e:
+        logger.error(f"Qdrant health failed: {e}")
+        status["qdrant"] = "down"
+
+    # Redis
+    try:
+        r = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+        r.ping()
+        status["redis"] = "up"
+    except Exception as e:
+        logger.error(f"Redis health failed: {e}")
+        status["redis"] = "down"
+
+    # Kafka (basic check)
+    try:
+        producer = app.state.producer
+        if producer:
+            status["kafka"] = "up"
+        else:
+            status["kafka"] = "down"
+    except Exception as e:
+        logger.error(f"Kafka health failed: {e}")
+        status["kafka"] = "down"
+
+    overall = "ok" if all(v == "up" for v in status.values()) else "degraded"
+
+    response = {
+        "status": overall,
+        "services": status
+    }
+
+    if overall == "degraded":
+        raise HTTPException(status_code=500, detail=response)
+    return response
+
 
 @app.post("/rag/ingest")
 async def rag_ingest(
