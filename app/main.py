@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile
 from typing import Annotated, Any
 from contextlib import asynccontextmanager
 import os
+import uuid
 
 # python packages imports
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Depends
@@ -49,8 +50,8 @@ async def lifespan(app: FastAPI):
     app.state.embeddings = Embeddings()
     app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
     app.state.graph = build_graph(app.state.retriever)
+    app.state.redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
 
-    app.state.limiter = limiter
     app.add_exception_handler(
         RateLimitExceeded,
         lambda request, exc: JSONResponse(
@@ -68,20 +69,26 @@ async def lifespan(app: FastAPI):
     app.state.qdrant._close_qrant_client()
     await producer.stop()
 
-limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Synapse", lifespan = lifespan)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 @app.middleware("http")
 async def log_requests(request, call_next):
-    logger.info(f"Request: {request.method} {request.url}")
+    request_id = str(uuid.uuid4())[:8]
+    request.state.request_id = request_id
+
+    logger.info(f"[{request_id}] {request.method} {request.url}")
 
     response = await call_next(request)
 
-    logger.info(f"Response: {response.status_code}")
+    logger.info(f"[{request_id}] {response.status_code}")
+
     return response
 
 @app.get("/health")
-def health_check(
+async def health_check(
     qdrant: Annotated[qdrantClient, Depends(get_qdrant)]
 ):
     status = {}
@@ -96,8 +103,7 @@ def health_check(
 
     # Redis
     try:
-        r = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
-        r.ping()
+        app.state.redis_client.ping()
         status["redis"] = "up"
     except Exception as e:
         logger.error(f"Redis health failed: {e}")
@@ -106,6 +112,7 @@ def health_check(
     # Kafka (basic check)
     try:
         producer = app.state.producer
+        await producer._producer.client.bootstrap()
         if producer:
             status["kafka"] = "up"
         else:
