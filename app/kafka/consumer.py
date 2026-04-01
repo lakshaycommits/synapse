@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 # Move imports OUTSIDE loop
 from utils.qdrantClient import qdrantClient
 from utils.embeddings import Embeddings
+from utils.logger import get_logger
 from rag.ingest import Ingestion
 
 load_dotenv()
@@ -19,12 +20,13 @@ TOPIC = os.getenv("KAFKA_INGEST_TOPIC")
 
 async def consume():
     # INIT ONCE
-    print("[INIT] Initializing Qdrant + Embeddings...")
+    logger = get_logger(__name__)
+    logger.info("Initializing Qdrant + Embeddings...")
 
     qdrant = qdrantClient()
     embeddings = Embeddings()
 
-    print("[INIT] Initialization complete")
+    logger.info("Initialization complete")
 
     consumer = AIOKafkaConsumer(
         TOPIC,
@@ -34,17 +36,17 @@ async def consume():
     )
 
     await consumer.start()
-    print(f"[CONSUMER] Listening on topic: {TOPIC}")
+    logger.info("Listening on topic: %s", TOPIC)
 
     try:
         async for msg in consumer:
-            print(f"[CONSUMER] Received: {msg.value}")
+            logger.debug("Received message: %s", msg.value)
 
             file_path = msg.value.get("file_path")
             filename = msg.value.get("filename")
 
             try:
-                print(f"[PROCESS] Ingesting {filename}")
+                logger.info("Ingesting %s", filename)
 
                 chunks = Ingestion.ingest(
                     [Path(file_path)],
@@ -52,15 +54,15 @@ async def consume():
                     embeddings
                 )
 
-                print(f"[SUCCESS] {filename} → {chunks} chunks")
+                logger.info("Ingest succeeded: %s → %s chunks", filename, chunks)
 
                 Path(file_path).unlink(missing_ok=True)
 
             except Exception as e:
-                print(f"[ERROR] {filename} → {e}")
+                logger.exception("Error ingesting %s", filename)
 
     finally:
-        print("[SHUTDOWN] Closing consumer")
+        logger.info("Closing consumer")
         await consumer.stop()
 
 

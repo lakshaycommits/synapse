@@ -6,6 +6,7 @@ from pathlib import Path
 from utils import qdrantClient
 from utils.embeddings import Embeddings
 from utils.helper_functions import _get_doc_hash
+from utils.logger import get_logger
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -45,7 +46,8 @@ class Ingestion:
 
     @staticmethod
     def ingest(paths: list[Path], qdrant: qdrantClient, embeddings: Embeddings) -> int:
-        print(f"Loaded {len(paths)} file(s)")
+        logger = get_logger(__name__)
+        logger.info("Loaded %d file(s)", len(paths))
 
         docs = Ingestion.load_documents(paths)
         splits = Ingestion.split_documents(docs)
@@ -53,15 +55,19 @@ class Ingestion:
         new_splits = Ingestion.check_duplication(qdrant, splits)
         
         if not new_splits:
-            print("No new chunks to index")
+            logger.info("No new chunks to index")
             return 0
 
         vector_store = qdrant._get_vector_store(embeddings.instance())
-        vector_store.add_documents(splits)
+        vector_store.add_documents(new_splits)
 
-        print(f"Indexed {len(splits)} chunk(s) into Qdrant collection {qdrant._get_collection_name()!r}")
-        print("Ingestion complete")
-        return len(splits)
+        logger.info(
+            "Indexed %d chunk(s) into Qdrant collection %r",
+            len(new_splits),
+            qdrant._get_collection_name(),
+        )
+        logger.debug("Ingestion complete")
+        return len(new_splits)
 
     @staticmethod
     def _get_existing_hashes(qdrant: qdrantClient) -> set:

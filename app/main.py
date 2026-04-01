@@ -29,6 +29,8 @@ from rag.retriever import create_retriever
 from utils.qdrantClient import qdrantClient
 from utils.dependencies import get_graph, get_producer, get_qdrant, get_embeddings
 from utils.embeddings import Embeddings
+from utils.logger import get_logger
+logger = get_logger()
 
 # models imports
 from models.request import QueryRequest
@@ -67,6 +69,15 @@ async def lifespan(app: FastAPI):
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Synapse", lifespan = lifespan)
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"Request: {request.method} {request.url}")
+
+    response = await call_next(request)
+
+    logger.info(f"Response: {response.status_code}")
+    return response
 
 @app.get("/health")
 def health_check():
