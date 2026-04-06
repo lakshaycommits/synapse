@@ -14,3 +14,4 @@ python-multipart
 aiokafka
 redis==5.3.1
 slowapi
+piptavily-python

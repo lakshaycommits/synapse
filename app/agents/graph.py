@@ -4,6 +4,7 @@ from typing import TypedDict, Literal
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 load_dotenv()
 
@@ -65,10 +66,16 @@ def planner_node(state: SynapseState) -> SynapseState:
 
 def build_graph(retriever):
     graph = StateGraph(SynapseState)
+    search_tool = TavilySearchResults(max_results=3)
 
     def retreival_node(state: SynapseState) -> SynapseState:
         docs = retriever.invoke(state["query"])
         context = [d.page_content for d in docs]
+        return {"context": context}
+
+    def web_search_node(state: SynapseState) -> SynapseState:
+        results = search_tool.invoke(state["query"])
+        context = [r["content"] for r in results]
         return {"context": context}
 
     graph.add_node("planner", planner_node)
@@ -76,13 +83,14 @@ def build_graph(retriever):
     graph.add_node("retrieval", retreival_node)
     graph.add_node("general", general_node)
     graph.add_node("response", response_node)
+    graph.add_node("web_search", web_search_node)
 
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "router")
 
     graph.add_conditional_edges("router", route_decision, {
         "index": "retrieval",
-        "web": "general",
+        "web": "web_search",
         "general": "general"
     })
 
