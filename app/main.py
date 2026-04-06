@@ -62,7 +62,8 @@ async def lifespan(app: FastAPI):
 
     set_llm_cache(RedisSemanticCache(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
-        embedding=app.state.embeddings.instance()
+        embedding=app.state.embeddings.instance(),
+        score_threshold=0.2
     ))
 
     yield
