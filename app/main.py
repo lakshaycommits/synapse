@@ -21,36 +21,52 @@ from fastapi.responses import JSONResponse
 load_dotenv()
 
 # graph imports
-from agents.graph import build_graph
+from .agents.graph import build_graph
 
 # rag imports
-from rag.ingest import Ingestion
-from rag.retriever import create_retriever
+from .rag.ingest import Ingestion
+from .rag.retriever import create_retriever
 
 # utils imports
-from utils.qdrantClient import qdrantClient
-from utils.dependencies import get_graph, get_producer, get_qdrant, get_embeddings
-from utils.embeddings import Embeddings
-from utils.logger import get_logger
+from .utils.qdrantClient import qdrantClient
+from .utils.dependencies import get_graph, get_producer, get_qdrant, get_embeddings
+from .utils.embeddings import Embeddings
+from .utils.logger import get_logger
 logger = get_logger()
 
 # models imports
-from models.request import QueryRequest
+from .models.request import QueryRequest
 
 # kafka imports
-from kafka.producer import Producer
+from .kafka.producer import Producer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    producer = Producer()
-    await producer.start()
-    app.state.producer = producer
+    # Initialize core dependencies first (Qdrant, embeddings, retriever, graph, redis).
+    # Delay starting the Kafka producer until dependencies are healthy to avoid
+    # leaking an open producer when startup fails due to downstream services.
+    producer = None
+    try:
+        app.state.qdrant = qdrantClient()
+        app.state.embeddings = Embeddings()
+        app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
+        app.state.graph = build_graph(app.state.retriever)
+        app.state.redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
 
-    app.state.qdrant = qdrantClient()
-    app.state.embeddings = Embeddings()
-    app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
-    app.state.graph = build_graph(app.state.retriever)
-    app.state.redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+        # Start the Kafka producer only after core services are ready
+        producer = Producer()
+        await producer.start()
+        app.state.producer = producer
+
+    except Exception as e:
+        logger.exception("Startup initialization failed: %s", e)
+        # Ensure producer is stopped if it was started
+        if producer is not None:
+            try:
+                await producer.stop()
+            except Exception:
+                pass
+        raise
 
     app.add_exception_handler(
         RateLimitExceeded,
@@ -67,8 +83,17 @@ async def lifespan(app: FastAPI):
     ))
 
     yield
-    app.state.qdrant._close_qrant_client()
-    await producer.stop()
+    try:
+        app.state.qdrant._close_qrant_client()
+    except Exception:
+        pass
+    # Stop producer if present
+    producer_obj = getattr(app.state, "producer", None)
+    if producer_obj:
+        try:
+            await producer_obj.stop()
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Synapse", lifespan = lifespan)
@@ -149,7 +174,9 @@ async def rag_ingest(
         for upload in files:
             name = upload.filename or "upload"
             suffix = Path(name).suffix or ".txt"
-            tmp = NamedTemporaryFile(delete=False, suffix=suffix)
+            upload_dir = Path(os.getenv("UPLOAD_DIR", "/tmp"))
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            tmp = NamedTemporaryFile(delete=False, suffix=suffix, dir=upload_dir)
             try:
                 shutil.copyfileobj(upload.file, tmp)
             finally:

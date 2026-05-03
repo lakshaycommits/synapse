@@ -7,10 +7,10 @@ from aiokafka import AIOKafkaConsumer
 from dotenv import load_dotenv
 
 # Move imports OUTSIDE loop
-from utils.qdrantClient import qdrantClient
-from utils.embeddings import Embeddings
-from utils.logger import get_logger
-from rag.ingest import Ingestion
+from ..utils.qdrantClient import qdrantClient
+from ..utils.embeddings import Embeddings
+from ..utils.logger import get_logger
+from ..rag.ingest import Ingestion
 
 load_dotenv()
 

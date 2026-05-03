@@ -15,7 +15,7 @@ class SynapseState(TypedDict):
     answer: str
     plan: str
 
-router_llm = ChatGroq(model=os.getenv("GROQ_LLM_MODEL"), api_key=os.getenv("GROQ_API_KEY"))
+router_llm = ChatGroq(model=os.getenv("GROQ_LLM_MODEL"), api_key=os.getenv("GROQ_API_KEY"), temperature=0)
 response_llm = ChatGroq(model=os.getenv("GROQ_LLM_TOOL_USE_MODEL"), api_key=os.getenv("GROQ_API_KEY"))
 
 def router_node(state: SynapseState) -> SynapseState:
@@ -95,6 +95,7 @@ def build_graph(retriever):
     })
 
     graph.add_edge("retrieval", "response")
+    graph.add_edge("web_search", "response")
     graph.add_edge("response", END)
     graph.add_edge("general", END)
 

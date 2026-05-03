@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from utils import qdrantClient
-from utils.embeddings import Embeddings
-from utils.helper_functions import _get_doc_hash
-from utils.logger import get_logger
+from ..utils import qdrantClient
+from ..utils.embeddings import Embeddings
+from ..utils.helper_functions import _get_doc_hash
+from ..utils.logger import get_logger
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter

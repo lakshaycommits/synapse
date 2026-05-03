@@ -2,13 +2,13 @@ import json
 from aiokafka import AIOKafkaProducer
 import os
 from dotenv import load_dotenv
-from utils.logger import get_logger
+from ..utils.logger import get_logger
 import json
 import os
 from dotenv import load_dotenv
 from aiokafka import AIOKafkaProducer
 
-from utils.logger import get_logger
+from ..utils.logger import get_logger
 
 load_dotenv()
 
