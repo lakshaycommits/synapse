@@ -10,6 +10,8 @@ import uuid
 
 # python packages imports
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile, Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -175,3 +177,13 @@ async def agent_query(
 
     result = await asyncio.to_thread(_invoke)
     return result
+
+
+# Serve React frontend — must come after all API routes
+_static_dir = Path(__file__).parent.parent / "static"
+if _static_dir.exists():
+    app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        return FileResponse(_static_dir / "index.html")
