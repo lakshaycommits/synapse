@@ -7,7 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from langchain_community.tools.tavily_search import TavilySearchResults
 load_dotenv()
 
-from utils.variables import RERANK_TOP_K, RELEVANCE_THRESHOLD
+from app.utils.variables import RERANK_TOP_K, RELEVANCE_THRESHOLD
 
 class SynapseState(TypedDict):
     query: str
