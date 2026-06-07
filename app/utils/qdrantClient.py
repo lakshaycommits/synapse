@@ -24,6 +24,7 @@ class qdrantClient:
         - QDRANT_CONNECT_DELAY (optional override, seconds)
         """
         self.QDRANT_URL = os.getenv("QDRANT_URL")
+        self.QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
         host = os.getenv("QDRANT_HOST", "qdrant")
         port = os.getenv("QDRANT_PORT", "6333")
         self.COLLECTION_NAME = os.getenv("QDRANT_COLLECTION")
@@ -48,7 +49,7 @@ class qdrantClient:
         for attempt in range(1, self.retries + 1):
             try:
                 logger.info("Connecting to Qdrant (attempt %d/%d) at %s", attempt, self.retries, self.QDRANT_URL)
-                self._instance = QdrantClient(url=self.QDRANT_URL)
+                self._instance = QdrantClient(url=self.QDRANT_URL, api_key=self.QDRANT_API_KEY)
                 # quick health check
                 self._instance.get_collections()
                 logger.info("Connected to Qdrant at %s", self.QDRANT_URL)
