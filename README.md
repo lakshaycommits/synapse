@@ -21,7 +21,6 @@ Engineering knowledge is fragmented across codebases, docs, issue trackers, and 
 | Vector Database | Qdrant |
 | LLM Inference | Groq |
 | Re-ranking | sentence-transformers (cross-encoder/ms-marco-MiniLM-L-6-v2) |
-| Message Queue | Kafka (KRaft mode, no Zookeeper) |
 | Semantic Cache | Redis |
 | Frontend | React + Vite |
 | Containerization | Docker Compose |
@@ -77,23 +76,20 @@ User Query
 File Upload (PDF / .txt / .md)
     │
     ▼
-FastAPI → Kafka Producer → Kafka Topic
-                                │
-                                ▼
-                        Kafka Consumer
-                                │
-                      ┌─────────┴──────────┐
-                      │  Deduplication     │
-                      │  (SHA-256 hash)    │
-                      └─────────┬──────────┘
-                                │
-                      Chunk + Embed + Store
-                                │
-                                ▼
-                             Qdrant
+FastAPI → BackgroundTask
+                │
+      ┌─────────┴──────────┐
+      │  Deduplication     │
+      │  (SHA-256 hash)    │
+      └─────────┬──────────┘
+                │
+      Chunk + Embed + Store
+                │
+                ▼
+             Qdrant
 ```
 
-Files are queued immediately on upload. Ingestion (chunking, embedding, indexing) happens asynchronously in a separate consumer process — the API never blocks on it.
+Files are saved on upload and ingested in a FastAPI BackgroundTask — the API returns immediately without blocking on chunking or embedding.
 
 ---
 
@@ -101,7 +97,7 @@ Files are queued immediately on upload. Ingestion (chunking, embedding, indexing
 
 - **Optimized multi-agent graph** — Planner (classify + rewrite) → Retrieval → Cross-encoder reflect → Response, with web fallback on poor retrieval quality
 - **Cross-encoder re-ranking** — retrieves top-10 chunks, re-ranks with a cross-encoder, passes top-4 to the response node — better answer quality without extra LLM calls
-- **Async ingestion pipeline** — Kafka producer/consumer decouples upload from indexing; the API returns immediately
+- **Async ingestion pipeline** — FastAPI BackgroundTasks decouples upload from indexing; the API returns immediately
 - **Duplicate detection** — SHA-256 content hashing prevents re-indexing identical chunks across uploads
 - **Semantic caching** — Redis-backed cache deduplicates LLM calls for semantically similar queries
 - **Web search fallback** — Tavily search for real-time queries or when vector retrieval quality is insufficient
@@ -154,7 +150,6 @@ GROQ_LLM_TOOL_USE_MODEL=
 TAVILY_API_KEY=
 EMBEDDING_MODEL=
 QDRANT_COLLECTION=
-KAFKA_BOOTSTRAP_SERVER=localhost:29092
 REDIS_URL=redis://localhost:6379
 ```
 
@@ -170,7 +165,7 @@ docker compose up --build
 
 ```bash
 # Terminal 1 — infrastructure
-docker compose up qdrant kafka redis
+docker compose up qdrant redis
 
 # Terminal 2 — backend
 pip install -r requirements.txt
@@ -191,8 +186,7 @@ Frontend runs at `http://localhost:5173`, backend at `http://localhost:8000`.
 | Command | Description |
 |---|---|
 | `docker compose up --build` | Start all services |
-| `docker compose up qdrant kafka redis` | Start infrastructure only |
-| `docker compose restart consumer` | Restart consumer after code changes |
+| `docker compose up qdrant redis` | Start infrastructure only |
 | `docker compose down` | Stop all services (data preserved) |
 | `docker compose down -v` | Stop and wipe all volumes |
 
