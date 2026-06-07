@@ -53,7 +53,7 @@ User Query
 │ Reflect Node (Cross-Encoder)        │
 │ • Scores top-10 chunks vs query     │
 │ • Keeps top-4 by relevance score    │
-│ • Falls back to web if score < -2.0 │
+│ • Falls back to web if score < -1.0 (web route only) │
 └────────────────┬────────────────────┘
                  │
             ┌────┴────┐

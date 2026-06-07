@@ -26,11 +26,20 @@ def planner_node(state: SynapseState) -> SynapseState:
     prompt = f"""You are a query planner. Given the user query, do two things:
 
         1. Classify it into exactly one category:
-        - index: about specific documents, files, codebases, or named systems that may have been uploaded
-        - web: needs real-time or recent information
-        - general: common knowledge that needs no documents
+        - index: about specific documents, files, codebases, named systems, or proper nouns that may refer to uploaded content
+        - web: needs real-time, recent, or live information (prices, news, current events)
+        - general: clearly generic common knowledge with no specific named subject
 
-        2. Rewrite it into a precise, keyword-rich search query (remove filler, keep technical terms and identifiers).
+        Rules:
+        - If the query contains a proper noun, project name, tool name, or named system → index
+        - If ambiguous between index and general → index
+        - Only use general for clearly generic questions ("what is recursion?", "explain REST APIs")
+
+        2. Rewrite it into a precise, keyword-rich search query optimized for vector search.
+        - Keep all technical terms, system names, and identifiers
+        - Remove only conversational filler ("can you", "please", "I want to know")
+        - If the query is already concise, return it unchanged
+        - Do NOT oversimplify — a bad rewrite is worse than the original
 
         User query: {state["query"]}
 
@@ -67,14 +76,25 @@ def general_node(state: SynapseState) -> SynapseState:
 
 
 def reflect_decision(state: SynapseState) -> Literal["response", "web_search"]:
-    return "response" if state.get("context_quality") == "good" else "web_search"
+    if state.get("context_quality") == "good":
+        return "response"
+    # Index route with poor quality: web search would return totally unrelated results.
+    # Return to response_node which will surface a honest "nothing found" message.
+    if state.get("route") == "index":
+        return "response"
+    return "web_search"
 
 
 def response_node(state: SynapseState) -> SynapseState:
-    prompt = f"""Answer the query using the context below.
-        Context: {state.get("context", [])}
+    context = state.get("context", [])
+
+    if not context:
+        return {"answer": "I couldn't find any relevant information in your indexed documents for this query. Try rephrasing, or upload documents that cover this topic."}
+
+    prompt = f"""Answer the query using ONLY the context below. Do not use outside knowledge.
+        Context: {context}
         Query: {state["query"]}
-        Give a precise, grounded answer."""
+        Give a precise, grounded answer based strictly on the context."""
     response = response_llm.invoke(prompt)
     return {"answer": response.content}
 
