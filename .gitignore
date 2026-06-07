@@ -55,3 +55,5 @@ Thumbs.db
 
 # --- project specific files ---
 test_files
+
+node_modules/

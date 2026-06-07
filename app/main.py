@@ -18,6 +18,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import redis
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 # graph imports
@@ -76,11 +77,11 @@ async def lifespan(app: FastAPI):
         ),
     )
 
-    set_llm_cache(RedisSemanticCache(
-        redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
-        embedding=app.state.embeddings.instance(),
-        score_threshold=0.2
-    ))
+    # set_llm_cache(RedisSemanticCache(
+    #     redis_url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+    #     embedding=app.state.embeddings.instance(),
+    #     score_threshold=1
+    # ))
 
     yield
     try:
@@ -97,6 +98,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Synapse", lifespan = lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 

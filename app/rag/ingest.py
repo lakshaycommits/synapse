@@ -72,18 +72,21 @@ class Ingestion:
     @staticmethod
     def _get_existing_hashes(qdrant: qdrantClient) -> set:
         try:
+            collection_name = os.getenv("QDRANT_COLLECTION")
+            existing = {c.name for c in qdrant._get_instance().get_collections().collections}
+            if collection_name not in existing:
+                return set()
             results = qdrant._get_instance().scroll(
-                collection_name=os.getenv("QDRANT_COLLECTION"),
+                collection_name=collection_name,
                 with_payload=True,
                 limit=10000
             )
-
             return {
                 point.payload.get("metadata", {}).get("hash")
                 for point in results[0]
                 if point.payload.get("metadata", {}).get("hash")
             }
-        except:
+        except Exception:
             return set()
 
     @staticmethod
