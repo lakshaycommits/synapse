@@ -32,6 +32,7 @@ from .rag.retriever import create_retriever
 from .utils.qdrantClient import qdrantClient
 from .utils.dependencies import get_graph, get_producer, get_qdrant, get_embeddings
 from .utils.embeddings import Embeddings
+from .utils.reranker import Reranker
 from .utils.logger import get_logger
 logger = get_logger()
 
@@ -50,8 +51,9 @@ async def lifespan(app: FastAPI):
     try:
         app.state.qdrant = qdrantClient()
         app.state.embeddings = Embeddings()
+        app.state.reranker = Reranker()
         app.state.retriever = create_retriever(app.state.embeddings.instance(), app.state.qdrant)
-        app.state.graph = build_graph(app.state.retriever)
+        app.state.graph = build_graph(app.state.retriever, app.state.reranker)
         app.state.redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
 
         # Start the Kafka producer only after core services are ready
