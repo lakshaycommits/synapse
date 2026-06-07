@@ -13,6 +13,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download the cross-encoder so startup doesn't block on model download
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
 COPY . .
 COPY --from=frontend /frontend/dist ./static
 
