@@ -113,6 +113,8 @@ def build_graph(retriever, reranker):
         context = state.get("context", [])
         if not context:
             return {"context_quality": "poor", "context": []}
+        if cross_encoder is None:
+            return {"context": context[:RERANK_TOP_K], "context_quality": "good"}
         pairs = [[state["query"], chunk] for chunk in context]
         scores = cross_encoder.predict(pairs)
         ranked = sorted(zip(scores, context), key=lambda x: x[0], reverse=True)
