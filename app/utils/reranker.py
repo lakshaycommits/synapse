@@ -7,9 +7,12 @@ class Reranker:
     def __init__(self):
         enabled = os.getenv("ENABLE_RERANKING", "true").lower() == "true"
         if enabled:
-            from sentence_transformers import CrossEncoder
-            model = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
-            self._instance = CrossEncoder(model)
+            try:
+                from sentence_transformers import CrossEncoder
+                model = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+                self._instance = CrossEncoder(model)
+            except ImportError:
+                self._instance = None
         else:
             self._instance = None
 
