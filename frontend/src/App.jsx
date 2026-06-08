@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const ROUTE_COLORS = {
   index: '#4ade80',
@@ -18,19 +20,58 @@ function QueryPanel() {
     setLoading(true)
     setResult(null)
     setError(null)
+
     try {
-      const res = await fetch('/agents/query', {
+      const res = await fetch('/agents/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
       })
+
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.detail || 'Request failed')
       }
-      setResult(await res.json())
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let answer = ''
+
+      setResult({ route: null, plan: null, answer: '', context: [] })
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6)
+          if (raw === '[DONE]') break
+
+          let parsed
+          try { parsed = JSON.parse(raw) } catch { continue }
+
+          if (parsed.type === 'meta') {
+            setResult(prev => ({ ...prev, route: parsed.route, plan: parsed.plan }))
+          } else if (parsed.type === 'token') {
+            answer += parsed.token
+            setResult(prev => ({ ...prev, answer }))
+          } else if (parsed.type === 'done') {
+            if (!answer && parsed.answer) answer = parsed.answer
+            setResult(prev => ({ ...prev, answer, context: parsed.context || [], _done: true }))
+          } else if (parsed.type === 'error') {
+            throw new Error(parsed.message)
+          }
+        }
+      }
     } catch (err) {
       setError(err.message)
+      setResult(null)
     } finally {
       setLoading(false)
     }
@@ -60,16 +101,24 @@ function QueryPanel() {
 
       {result && (
         <div className="result-box">
-          <div className="result-meta">
-            <span
-              className="route-badge"
-              style={{ background: ROUTE_COLORS[result.route] ?? '#6b7280' }}
-            >
-              {result.route}
-            </span>
-            {result.plan && <span className="plan-text">Plan: {result.plan}</span>}
+          {(result.route || result.plan) && (
+            <div className="result-meta">
+              {result.route && (
+                <span
+                  className="route-badge"
+                  style={{ background: ROUTE_COLORS[result.route] ?? '#6b7280' }}
+                >
+                  {result.route}
+                </span>
+              )}
+              {result.plan && <span className="plan-text">Plan: {result.plan}</span>}
+            </div>
+          )}
+          <div className={`answer${loading && !result._done ? ' streaming' : ''}`}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {result.answer}
+            </ReactMarkdown>
           </div>
-          <div className="answer">{result.answer}</div>
           {result.context?.length > 0 && (
             <details className="context-details">
               <summary>Sources ({result.context.length})</summary>

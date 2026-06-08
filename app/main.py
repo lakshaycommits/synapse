@@ -1,5 +1,6 @@
 # python inbuilt imports
 import asyncio
+import json
 import shutil
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -17,7 +18,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import redis
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
@@ -177,6 +178,51 @@ async def agent_query(
 
     result = await asyncio.to_thread(_invoke)
     return result
+
+
+@app.post("/agents/stream")
+@limiter.limit("5/minute")
+async def agent_stream(
+    body: QueryRequest,
+    request: Request,
+    graph: Annotated[Any, Depends(get_graph)],
+):
+    async def event_generator():
+        context: list = []
+        try:
+            async for event in graph.astream_events({"query": body.query}, version="v2"):
+                kind = event["event"]
+                name = event.get("name", "")
+                node = event.get("metadata", {}).get("langgraph_node", "")
+
+                if kind == "on_chain_end":
+                    if name == "planner":
+                        output = event["data"].get("output", {})
+                        yield f"data: {json.dumps({'type': 'meta', 'route': output.get('route'), 'plan': output.get('plan')})}\n\n"
+                    elif name in ("reflect", "web_search"):
+                        output = event["data"].get("output", {})
+                        context = output.get("context", context)
+                    elif name in ("response", "general"):
+                        output = event["data"].get("output", {})
+                        yield f"data: {json.dumps({'type': 'done', 'context': context, 'answer': output.get('answer', '')})}\n\n"
+
+                elif kind == "on_chat_model_stream" and node in ("response", "general"):
+                    chunk = event["data"].get("chunk")
+                    content = getattr(chunk, "content", "") if chunk else ""
+                    if content:
+                        yield f"data: {json.dumps({'type': 'token', 'token': content})}\n\n"
+
+        except Exception as e:
+            logger.exception("Streaming error")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # Serve React frontend — must come after all API routes
