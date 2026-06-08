@@ -45,11 +45,14 @@ class Ingestion:
         return splitter.split_documents(docs)
 
     @staticmethod
-    def ingest(paths: list[Path], qdrant: qdrantClient, embeddings: Embeddings) -> int:
+    def ingest(paths: list[Path], qdrant: qdrantClient, embeddings: Embeddings, source_name: str | None = None) -> int:
         logger = get_logger(__name__)
         logger.info("Loaded %d file(s)", len(paths))
 
         docs = Ingestion.load_documents(paths)
+        if source_name:
+            for doc in docs:
+                doc.metadata["source"] = source_name
         splits = Ingestion.split_documents(docs)
 
         new_splits = Ingestion.check_duplication(qdrant, splits)

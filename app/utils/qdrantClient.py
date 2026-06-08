@@ -92,5 +92,44 @@ class qdrantClient:
             embedding=embeddings,
         )
 
+    def list_documents(self) -> list[dict]:
+        try:
+            existing = {c.name for c in self._instance.get_collections().collections}
+            if self.COLLECTION_NAME not in existing:
+                return []
+            results, _ = self._instance.scroll(
+                collection_name=self.COLLECTION_NAME,
+                with_payload=True,
+                limit=10000,
+            )
+            counts: dict[str, int] = {}
+            for point in results:
+                source = point.payload.get("metadata", {}).get("source", "unknown")
+                counts[source] = counts.get(source, 0) + 1
+            return [{"source": src, "chunk_count": n} for src, n in sorted(counts.items())]
+        except Exception:
+            logger.exception("Failed to list documents")
+            return []
+
+    def delete_document(self, source: str) -> bool:
+        try:
+            self._instance.delete(
+                collection_name=self.COLLECTION_NAME,
+                points_selector=qmodels.FilterSelector(
+                    filter=qmodels.Filter(
+                        must=[
+                            qmodels.FieldCondition(
+                                key="metadata.source",
+                                match=qmodels.MatchValue(value=source),
+                            )
+                        ]
+                    )
+                ),
+            )
+            return True
+        except Exception:
+            logger.exception("Failed to delete document %r", source)
+            return False
+
     def _close_qrant_client(self):
         self._get_instance().close()

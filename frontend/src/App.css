@@ -318,6 +318,82 @@ button[type="submit"]:disabled,
 
 .remove-btn:hover { color: var(--red); }
 
+/* Indexed documents */
+.doc-index {
+  margin-top: 28px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.doc-index h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-count {
+  background: rgba(129, 140, 248, 0.15);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 100px;
+}
+
+.doc-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.doc-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.doc-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
+.doc-name {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-chunks {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.doc-delete {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.doc-delete:hover { color: var(--red); }
+.doc-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Feedback */
 .success-box,
 .error-box {

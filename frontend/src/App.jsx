@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -138,7 +138,37 @@ function IngestPanel() {
   const [uploading, setUploading] = useState(false)
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
+  const [documents, setDocuments] = useState([])
+  const [deletingSource, setDeletingSource] = useState(null)
   const inputRef = useRef(null)
+
+  async function fetchDocuments() {
+    try {
+      const res = await fetch('/rag/documents')
+      if (res.ok) {
+        const data = await res.json()
+        setDocuments(data.documents || [])
+      }
+    } catch {}
+  }
+
+  useEffect(() => { fetchDocuments() }, [])
+
+  async function handleDelete(source) {
+    setDeletingSource(source)
+    try {
+      const res = await fetch(`/rag/documents?source=${encodeURIComponent(source)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Delete failed')
+      }
+      await fetchDocuments()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeletingSource(null)
+    }
+  }
 
   function handleFiles(incoming) {
     const valid = Array.from(incoming).filter(f =>
@@ -175,6 +205,7 @@ function IngestPanel() {
       const data = await res.json()
       setStatus(data.message)
       setFiles([])
+      await fetchDocuments()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -227,6 +258,30 @@ function IngestPanel() {
 
       {status && <div className="success-box">{status}</div>}
       {error && <div className="error-box">{error}</div>}
+
+      <div className="doc-index">
+        <h3>Indexed documents {documents.length > 0 && <span className="doc-count">{documents.length}</span>}</h3>
+        {documents.length === 0 ? (
+          <p className="doc-empty">No documents indexed yet.</p>
+        ) : (
+          <ul className="doc-list">
+            {documents.map(doc => (
+              <li key={doc.source}>
+                <span className="doc-name">{doc.source}</span>
+                <span className="doc-chunks">{doc.chunk_count} chunks</span>
+                <button
+                  className="doc-delete"
+                  onClick={() => handleDelete(doc.source)}
+                  disabled={deletingSource === doc.source}
+                  title="Remove from index"
+                >
+                  {deletingSource === doc.source ? '…' : '×'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
