@@ -14,3 +14,4 @@ redis==5.3.1
 slowapi
 tavily-python
 aiofiles
+huggingface_hub
