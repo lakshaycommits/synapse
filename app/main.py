@@ -41,12 +41,12 @@ logger = get_logger()
 from .models.request import QueryRequest
 
 
-def _ingest_file(path: Path, qdrant: qdrantClient, embeddings: Embeddings):
+def _ingest_file(path: Path, qdrant: qdrantClient, embeddings: Embeddings, original_name: str):
     try:
-        chunks = Ingestion.ingest([path], qdrant, embeddings)
-        logger.info("Ingest succeeded: %s → %s chunks", path.name, chunks)
+        chunks = Ingestion.ingest([path], qdrant, embeddings, source_name=original_name)
+        logger.info("Ingest succeeded: %s → %s chunks", original_name, chunks)
     except Exception:
-        logger.exception("Error ingesting %s", path.name)
+        logger.exception("Error ingesting %s", original_name)
     finally:
         path.unlink(missing_ok=True)
 
@@ -157,13 +157,31 @@ async def rag_ingest(
         upload.file.close()
         tmp_paths.append(Path(tmp.name))
 
-    for path in tmp_paths:
-        background_tasks.add_task(_ingest_file, path, qdrant, embeddings)
+    for upload, path in zip(files, tmp_paths):
+        background_tasks.add_task(_ingest_file, path, qdrant, embeddings, upload.filename or path.name)
 
     return {
         "message": "files queued for ingestion",
         "filenames": [f.filename for f in files],
     }
+
+
+@app.get("/rag/documents")
+async def list_documents(
+    qdrant: Annotated[qdrantClient, Depends(get_qdrant)],
+):
+    return {"documents": qdrant.list_documents()}
+
+
+@app.delete("/rag/documents")
+async def delete_document(
+    source: str,
+    qdrant: Annotated[qdrantClient, Depends(get_qdrant)],
+):
+    ok = qdrant.delete_document(source)
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"Failed to delete {source!r}")
+    return {"deleted": source}
 
 
 @app.post("/agents/query")

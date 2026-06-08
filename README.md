@@ -98,10 +98,12 @@ User Query
 - Configurable relevance threshold (`RELEVANCE_THRESHOLD`) — controls the quality gate before web fallback
 - Grounded responses — `response_node` is instructed to answer strictly from context, never from outside knowledge
 
-**Ingestion**
+**Ingestion & document management**
 - Background ingestion via `FastAPI.BackgroundTasks` — upload returns in milliseconds
 - SHA-256 content hashing for deduplication — same file uploaded twice doesn't create duplicate chunks
 - Supports PDF, Markdown, and plain text
+- Document index listing — `GET /rag/documents` returns all indexed files with chunk counts
+- Targeted deletion — `DELETE /rag/documents?source=<name>` removes a document and every chunk that belongs to it from the vector store
 
 **Infrastructure**
 - Token streaming over SSE — `POST /agents/stream` emits `meta` → `token`... → `done` events; frontend renders progressively
@@ -125,6 +127,8 @@ User Query
 |---|---|---|
 | `GET` | `/health` | Live status of Qdrant and Redis |
 | `POST` | `/rag/ingest` | Upload documents for background indexing |
+| `GET` | `/rag/documents` | List all indexed documents with chunk counts |
+| `DELETE` | `/rag/documents?source=<name>` | Remove a document and all its chunks from the index |
 | `POST` | `/agents/query` | Submit a query, get full JSON response |
 | `POST` | `/agents/stream` | Submit a query, get token-streamed SSE response |
 
@@ -269,7 +273,6 @@ docker compose down -v             # stop and wipe volumes
 
 - [ ] GitHub integration — auto-ingest PRs, issues, and code via webhook
 - [ ] LangFuse observability — LLM traces, token usage, latency per node
-- [ ] Document management — list and delete indexed documents via API
 
 ---
 
