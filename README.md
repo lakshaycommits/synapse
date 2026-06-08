@@ -1,124 +1,144 @@
 # Synapse
 
-An AI-powered engineering assistant that answers developer queries using a multi-agent RAG pipeline backed by a production-grade async infrastructure.
+**AI-powered engineering assistant** — multi-agent RAG pipeline that retrieves context from your documents, re-ranks it with a cross-encoder, and streams a grounded answer token-by-token.
+
+[![Live Demo](https://img.shields.io/badge/demo-live%20on%20Render-46e3b7?style=flat-square)](https://synapse-nt8k.onrender.com/)
+[![Python](https://img.shields.io/badge/python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-multi--agent-1C3C3C?style=flat-square)](https://langchain-ai.github.io/langgraph)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 ---
 
-## Overview
+## What it does
 
-Engineering knowledge is fragmented across codebases, docs, issue trackers, and the web. Synapse provides a single natural language interface that retrieves the right context from the right source and generates a precise, grounded answer — not a generic LLM response.
+Engineering knowledge is fragmented across codebases, runbooks, and issue trackers. Synapse gives you a single natural language interface to query all of it:
+
+- Upload your docs (PDF, Markdown, plain text)
+- Ask a question in plain English
+- Get a precise, grounded answer streamed in real-time — sourced from your documents, or the web as a fallback
 
 ---
 
 ## Architecture
 
-### Core Stack
-
-| Layer | Technology |
-|---|---|
-| Backend | FastAPI (async) |
-| Agent Orchestration | LangGraph |
-| Vector Database | Qdrant |
-| LLM Inference | Groq |
-| Re-ranking | sentence-transformers (cross-encoder/ms-marco-MiniLM-L-6-v2) |
-| Semantic Cache | Redis |
-| Frontend | React + Vite |
-| Containerization | Docker Compose |
-
----
-
-### Agent Graph
-
 ```
 User Query
     │
     ▼
-┌─────────────────────────────────────┐
-│ Planner Node                        │
-│ • Rewrites query for retrieval      │
-│ • Classifies route in one LLM call  │
-└────────────────┬────────────────────┘
-                 │
-        ┌────────┼────────┐
-        │        │        │
-      index     web    general
-        │        │        │
-        ▼        ▼        ▼
-   Retrieval  Web Search  LLM
-   (Qdrant)   (Tavily)   Direct
-      │
-      ▼
-┌─────────────────────────────────────┐
-│ Reflect Node (Cross-Encoder)        │
-│ • Scores top-10 chunks vs query     │
-│ • Keeps top-4 by relevance score    │
-│ • Falls back to web if score < -1.0 (web route only) │
-└────────────────┬────────────────────┘
-                 │
-            ┌────┴────┐
-          good       poor
-            │           │
-            ▼           ▼
-        Response    Web Search
-         Node        → Response
+┌──────────────────────────────────────────┐
+│  Planner                                 │
+│  • Rewrites query for vector search      │
+│  • Classifies route (index/web/general)  │
+│  — single LLM call, no redundant hop —  │
+└──────────────┬───────────────────────────┘
+               │
+       ┌───────┼────────┐
+       ▼       ▼        ▼
+    index     web    general
+       │       │        │
+  Qdrant   Tavily    Groq LLM
+  (top-10)  (top-3)  (direct)
+       │
+       ▼
+┌──────────────────────────────────────────┐
+│  Reflect  (Cross-Encoder Re-ranker)      │
+│  • Scores all retrieved chunks vs query  │
+│  • Keeps top-4 by relevance              │
+│  • Routes to web fallback if score poor  │
+│    (index route: honest "not found")     │
+└──────────────┬───────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────┐
+│  Response                                │
+│  • Answers strictly from context         │
+│  • Streams tokens via SSE                │
+└──────────────────────────────────────────┘
 ```
 
-**Design decisions:**
-- Planner and router merged into a single LLM call using structured text output (TOON format) — eliminates a redundant round-trip
-- Cross-encoder re-ranking replaces an LLM-based reflection step — no extra inference cost, better relevance scoring
-- Short queries (≤ 3 words) bypass the semantic cache to prevent false cache hits from overly similar embeddings
+### Key design decisions
+
+| Decision | Why |
+|---|---|
+| Planner merges classification + query rewrite into one LLM call | Eliminates a redundant round-trip; structured text output (`ROUTE:` / `QUERY:`) parsed with zero-shot parsing |
+| Cross-encoder re-ranking (ms-marco-MiniLM-L-6-v2) instead of LLM reflection | Better relevance signal at zero added inference cost; threshold-based quality gate |
+| Index route never falls back to web search | Web search returns unrelated results for document-specific queries; honest "not found" is more useful |
+| HuggingFace Inference API for embeddings | No local model loaded — saves ~250 MB RAM, critical for free-tier deployment |
+| `ENABLE_RERANKING` env flag | Cross-encoder disabled on Render free tier (512 MB limit); enabled locally via `requirements-dev.txt` |
+| FastAPI `BackgroundTasks` for ingestion | Upload API returns immediately; chunking + embedding runs async behind the response |
+| Multi-stage Docker build (Node → Python) | React SPA served directly from FastAPI `StaticFiles` — no separate frontend hosting needed |
 
 ---
 
-### Ingestion Pipeline
+## Tech stack
 
-```
-File Upload (PDF / .txt / .md)
-    │
-    ▼
-FastAPI → BackgroundTask
-                │
-      ┌─────────┴──────────┐
-      │  Deduplication     │
-      │  (SHA-256 hash)    │
-      └─────────┬──────────┘
-                │
-      Chunk + Embed + Store
-                │
-                ▼
-             Qdrant
-```
-
-Files are saved on upload and ingested in a FastAPI BackgroundTask — the API returns immediately without blocking on chunking or embedding.
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI (async, lifespan) |
+| Agent orchestration | LangGraph |
+| LLM | Groq (llama-3 family) |
+| Embeddings | HuggingFace Inference API (`all-MiniLM-L6-v2`) |
+| Re-ranking | sentence-transformers cross-encoder (`ms-marco-MiniLM-L-6-v2`) |
+| Vector database | Qdrant Cloud |
+| Semantic cache | Redis |
+| Web search | Tavily |
+| Frontend | React 18 + Vite, react-markdown |
+| Streaming | Server-Sent Events (SSE) via `graph.astream_events` |
+| Containerization | Docker (multi-stage) + Docker Compose |
+| Deployment | Render |
 
 ---
 
 ## Features
 
-- **Optimized multi-agent graph** — Planner (classify + rewrite) → Retrieval → Cross-encoder reflect → Response, with web fallback on poor retrieval quality
-- **Cross-encoder re-ranking** — retrieves top-10 chunks, re-ranks with a cross-encoder, passes top-4 to the response node — better answer quality without extra LLM calls
-- **Async ingestion pipeline** — FastAPI BackgroundTasks decouples upload from indexing; the API returns immediately
-- **Duplicate detection** — SHA-256 content hashing prevents re-indexing identical chunks across uploads
-- **Semantic caching** — Redis-backed cache deduplicates LLM calls for semantically similar queries
-- **Web search fallback** — Tavily search for real-time queries or when vector retrieval quality is insufficient
-- **Rate limiting** — 5 requests/minute per IP on the query endpoint
-- **Structured logging** — unique request ID propagated across all log lines for full request traceability
-- **Health endpoint** — `/health` reports live status of Qdrant, Redis, and Kafka
-- **React frontend** — query interface with route badge, retrieval sources, and async file upload with drag-and-drop
-- **Docker Compose** — single command brings up all services (API, consumer, Qdrant, Kafka, Redis)
-- **Hot reload** — source code mounted as volumes; `uvicorn --reload` picks up changes without rebuilds
+**Agent pipeline**
+- Merged planner+router in a single LLM call — structured output parsed with zero-shot regex, no LLM function calling needed
+- Cross-encoder re-ranking: retrieve top-10 from Qdrant, re-score every chunk against the query, pass top-4 to the response LLM
+- Configurable relevance threshold (`RELEVANCE_THRESHOLD`) — controls the quality gate before web fallback
+- Grounded responses — `response_node` is instructed to answer strictly from context, never from outside knowledge
+
+**Ingestion**
+- Background ingestion via `FastAPI.BackgroundTasks` — upload returns in milliseconds
+- SHA-256 content hashing for deduplication — same file uploaded twice doesn't create duplicate chunks
+- Supports PDF, Markdown, and plain text
+
+**Infrastructure**
+- Token streaming over SSE — `POST /agents/stream` emits `meta` → `token`... → `done` events; frontend renders progressively
+- Semantic cache with Redis — near-duplicate queries skip the full pipeline
+- Rate limiting with `slowapi` — 5 req/min per IP on query endpoints
+- Structured logging with per-request UUID — every log line is traceable to a single request
+- Health endpoint — `/health` reports live status of Qdrant and Redis
+
+**Frontend**
+- Streaming answer with blinking cursor during inference
+- Markdown rendering (headers, code blocks, tables, inline code) via react-markdown + remark-gfm
+- Route badge shows how the query was routed (index / web / general)
+- Drag-and-drop file upload with client-side validation
+- Served as a single binary — React SPA bundled into `static/` at build time, served by FastAPI
 
 ---
 
-## API
+## API reference
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Live status of Qdrant, Redis, Kafka |
-| `POST` | `/rag/ingest` | Upload documents (PDF, .txt, .md) for background indexing |
-| `POST` | `/agents/query` | Submit a natural language query |
+| `GET` | `/health` | Live status of Qdrant and Redis |
+| `POST` | `/rag/ingest` | Upload documents for background indexing |
+| `POST` | `/agents/query` | Submit a query, get full JSON response |
+| `POST` | `/agents/stream` | Submit a query, get token-streamed SSE response |
 
-### Query response shape
+### `/agents/stream` — SSE event types
+
+```
+data: {"type": "meta",  "route": "index", "plan": "auth service 401 errors"}
+data: {"type": "token", "token": "The "}
+data: {"type": "token", "token": "auth service..."}
+data: {"type": "done",  "context": ["...chunk 1...", "...chunk 2..."], "answer": "<full>"}
+data: [DONE]
+```
+
+### `/agents/query` — JSON response
 
 ```json
 {
@@ -133,73 +153,123 @@ Files are saved on upload and ingested in a FastAPI BackgroundTask — the API r
 
 ---
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
 - Python 3.10+
+- Node 18+
 - Docker + Docker Compose
-- API keys: Groq, Tavily
+- API keys: Groq, Tavily, HuggingFace, Qdrant Cloud
 
 ### Environment variables
 
+Create a `.env` file in the project root:
+
 ```env
+# LLM
 GROQ_API_KEY=
-GROQ_LLM_MODEL=
-GROQ_LLM_TOOL_USE_MODEL=
+GROQ_LLM_MODEL=llama-3.3-70b-versatile
+GROQ_LLM_TOOL_USE_MODEL=llama-3.3-70b-versatile
+
+# Search
 TAVILY_API_KEY=
+
+# Embeddings
 HUGGINGFACEHUB_API_TOKEN=
 EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-QDRANT_COLLECTION=synapse_docs
-QDRANT_URL=
+
+# Vector DB (Qdrant Cloud)
+QDRANT_URL=https://your-cluster.qdrant.io
 QDRANT_API_KEY=
+QDRANT_COLLECTION=synapse_docs
+
+# Cache
 REDIS_URL=redis://localhost:6379
+
+# Re-ranking (set false to disable on memory-constrained environments)
+ENABLE_RERANKING=true
 ```
 
-### Run everything with Docker
+### Run with Docker (recommended)
 
 ```bash
 git clone https://github.com/your-username/synapse.git
 cd synapse
+cp .env.example .env   # fill in your keys
 docker compose up --build
 ```
 
-### Run infrastructure in Docker, backend locally
+App available at `http://localhost:8000`.
+
+### Run locally (infrastructure in Docker, code outside)
 
 ```bash
 # Terminal 1 — infrastructure
 docker compose up qdrant redis
 
-# Terminal 2 — backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+# Terminal 2 — backend (with re-ranking enabled)
+pip install -r requirements-dev.txt
+uvicorn app.main:app --reload --port 8000
 
 # Terminal 3 — frontend
 cd frontend
-npm install
-npm run dev
+npm install && npm run dev
 ```
 
-Frontend runs at `http://localhost:5173`, backend at `http://localhost:8000`.
+Frontend dev server at `http://localhost:5173`, backend at `http://localhost:8000`.
+
+---
+
+## Project structure
+
+```
+synapse/
+├── app/
+│   ├── agents/
+│   │   └── graph.py          # LangGraph pipeline (planner, retrieval, reflect, response)
+│   ├── rag/
+│   │   ├── ingest.py         # chunking, hashing, embedding, upsert
+│   │   └── retriever.py      # Qdrant retriever
+│   ├── utils/
+│   │   ├── embeddings.py     # HuggingFace Inference API wrapper
+│   │   ├── reranker.py       # optional cross-encoder (ENABLE_RERANKING flag)
+│   │   ├── qdrantClient.py   # Qdrant client singleton
+│   │   ├── variables.py      # RERANK_TOP_K, RELEVANCE_THRESHOLD
+│   │   └── logger.py         # structured logger
+│   ├── models/
+│   │   └── request.py        # Pydantic request models
+│   └── main.py               # FastAPI app, lifespan, routes, SSE endpoint
+├── frontend/
+│   └── src/
+│       ├── App.jsx           # QueryPanel (streaming), IngestPanel
+│       └── App.css
+├── docs/
+│   └── submit-no-match-contribution.md
+├── Dockerfile                # multi-stage: Node (build) → Python (serve)
+├── docker-compose.yml        # qdrant, redis, app
+├── requirements.txt          # production deps (no sentence-transformers)
+└── requirements-dev.txt      # + sentence-transformers for local re-ranking
+```
 
 ---
 
 ## Useful commands
 
-| Command | Description |
-|---|---|
-| `docker compose up --build` | Start all services |
-| `docker compose up qdrant redis` | Start infrastructure only |
-| `docker compose down` | Stop all services (data preserved) |
-| `docker compose down -v` | Stop and wipe all volumes |
+```bash
+docker compose up --build          # start everything
+docker compose up qdrant redis     # infrastructure only
+docker compose down                # stop (data preserved)
+docker compose down -v             # stop and wipe volumes
+```
 
 ---
 
-## Planned
+## Roadmap
 
-- GitHub integration — auto-ingest PRs, issues, and code from connected repositories
-- CI/CD pipeline (GitHub Actions)
-- Observability — LangFuse traces + Prometheus/Grafana dashboards
+- [ ] GitHub integration — auto-ingest PRs, issues, and code via webhook
+- [ ] LangFuse observability — LLM traces, token usage, latency per node
+- [ ] Document management — list and delete indexed documents via API
 
 ---
 
