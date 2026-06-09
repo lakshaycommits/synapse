@@ -38,7 +38,11 @@ from .utils.logger import get_logger
 logger = get_logger()
 
 # models imports
-from .models.request import QueryRequest
+from .models.request import QueryRequest, SyncRequest
+
+# github imports
+from .github.sync import sync_repository
+from .github.webhook import verify_signature, handle_webhook_event
 
 
 def _ingest_file(path: Path, qdrant: qdrantClient, embeddings: Embeddings, original_name: str):
@@ -241,6 +245,41 @@ async def agent_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/github/sync")
+async def github_sync(
+    body: SyncRequest,
+    background_tasks: BackgroundTasks,
+    qdrant: Annotated[qdrantClient, Depends(get_qdrant)],
+    embeddings: Annotated[Embeddings, Depends(get_embeddings)],
+):
+    background_tasks.add_task(
+        sync_repository, body.repo, body.branch, qdrant, embeddings, _ingest_file
+    )
+    return {"status": "sync started", "repo": body.repo, "branch": body.branch}
+
+
+@app.post("/github/webhook")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    qdrant: Annotated[qdrantClient, Depends(get_qdrant)],
+    embeddings: Annotated[Embeddings, Depends(get_embeddings)],
+):
+    payload_bytes = await request.body()
+    secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+    if secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if not verify_signature(payload_bytes, signature, secret):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    payload = json.loads(payload_bytes)
+    event_type = request.headers.get("X-GitHub-Event", "")
+    background_tasks.add_task(
+        handle_webhook_event, event_type, payload, qdrant, embeddings, _ingest_file
+    )
+    return {"ok": True}
 
 
 # Serve React frontend — must come after all API routes

@@ -15,3 +15,4 @@ slowapi
 tavily-python
 aiofiles
 huggingface_hub
+PyGithub

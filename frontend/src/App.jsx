@@ -286,6 +286,106 @@ function IngestPanel() {
   )
 }
 
+function GitHubPanel() {
+  const [repo, setRepo] = useState('')
+  const [branch, setBranch] = useState('main')
+  const [syncing, setSyncing] = useState(false)
+  const [status, setStatus] = useState(null)
+  const [error, setError] = useState(null)
+
+  const webhookUrl = `${window.location.origin}/github/webhook`
+
+  async function handleSync(e) {
+    e.preventDefault()
+    if (!repo.trim()) return
+    setSyncing(true)
+    setStatus(null)
+    setError(null)
+    try {
+      const res = await fetch('/github/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: repo.trim(), branch: branch.trim() || 'main' }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Sync failed')
+      }
+      const data = await res.json()
+      setStatus(`Sync started for ${data.repo} (${data.branch}). Issues, PRs, and code files are being indexed in the background.`)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <div className="panel">
+      <h2>GitHub</h2>
+      <p className="subtitle">Sync a repository to index its issues, pull requests, and code files.</p>
+
+      <form onSubmit={handleSync} className="gh-form">
+        <div className="gh-fields">
+          <div className="gh-field">
+            <label>Repository</label>
+            <input
+              type="text"
+              value={repo}
+              onChange={e => setRepo(e.target.value)}
+              placeholder="owner/repository"
+              disabled={syncing}
+            />
+          </div>
+          <div className="gh-field gh-field--narrow">
+            <label>Branch</label>
+            <input
+              type="text"
+              value={branch}
+              onChange={e => setBranch(e.target.value)}
+              placeholder="main"
+              disabled={syncing}
+            />
+          </div>
+        </div>
+        <button type="submit" disabled={syncing || !repo.trim()}>
+          {syncing ? 'Starting sync...' : 'Sync repository →'}
+        </button>
+      </form>
+
+      {error && <div className="error-box">{error}</div>}
+      {status && <div className="success-box">{status}</div>}
+
+      <div className="webhook-section">
+        <h3>Real-time updates via webhook</h3>
+        <p className="subtitle">
+          Configure a webhook in your GitHub repository settings to automatically re-index issues,
+          PRs, and code changes as they happen.
+        </p>
+        <ol className="webhook-steps">
+          <li>Go to your repository → <strong>Settings → Webhooks → Add webhook</strong></li>
+          <li>
+            Set <strong>Payload URL</strong> to:
+            <div className="webhook-url">
+              <code>{webhookUrl}</code>
+              <button
+                className="copy-btn"
+                type="button"
+                onClick={() => navigator.clipboard.writeText(webhookUrl)}
+              >
+                Copy
+              </button>
+            </div>
+          </li>
+          <li>Set <strong>Content type</strong> to <code>application/json</code></li>
+          <li>Set <strong>Secret</strong> to the value of your <code>GITHUB_WEBHOOK_SECRET</code> env var</li>
+          <li>Select events: <strong>Issues</strong>, <strong>Pull requests</strong>, <strong>Pushes</strong></li>
+        </ol>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [tab, setTab] = useState('query')
 
@@ -303,10 +403,15 @@ export default function App() {
           <button className={tab === 'ingest' ? 'active' : ''} onClick={() => setTab('ingest')}>
             Ingest
           </button>
+          <button className={tab === 'github' ? 'active' : ''} onClick={() => setTab('github')}>
+            GitHub
+          </button>
         </nav>
       </aside>
       <main className="content">
-        {tab === 'query' ? <QueryPanel /> : <IngestPanel />}
+        {tab === 'query' && <QueryPanel />}
+        {tab === 'ingest' && <IngestPanel />}
+        {tab === 'github' && <GitHubPanel />}
       </main>
     </div>
   )
