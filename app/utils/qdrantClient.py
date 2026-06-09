@@ -67,15 +67,19 @@ class qdrantClient:
 
     def _ensure_collection(self, collection_name: str, embeddings) -> None:
         existing = {c.name for c in self._instance.get_collections().collections}
-        if collection_name in existing:
-            return
-        dim = len(embeddings.embed_query("."))
-        self._instance.create_collection(
+        if collection_name not in existing:
+            dim = len(embeddings.embed_query("."))
+            self._instance.create_collection(
+                collection_name=collection_name,
+                vectors_config=qmodels.VectorParams(
+                    size=dim,
+                    distance=qmodels.Distance.COSINE,
+                ),
+            )
+        self._instance.create_payload_index(
             collection_name=collection_name,
-            vectors_config=qmodels.VectorParams(
-                size=dim,
-                distance=qmodels.Distance.COSINE,
-            ),
+            field_name="metadata.source",
+            field_schema=qmodels.PayloadSchemaType.KEYWORD,
         )
 
     def _get_collection_name(self):
@@ -92,11 +96,22 @@ class qdrantClient:
             embedding=embeddings,
         )
 
+    def _ensure_source_index(self) -> None:
+        try:
+            self._instance.create_payload_index(
+                collection_name=self.COLLECTION_NAME,
+                field_name="metadata.source",
+                field_schema=qmodels.PayloadSchemaType.KEYWORD,
+            )
+        except Exception:
+            pass
+
     def list_documents(self) -> list[dict]:
         try:
             existing = {c.name for c in self._instance.get_collections().collections}
             if self.COLLECTION_NAME not in existing:
                 return []
+            self._ensure_source_index()
             results, _ = self._instance.scroll(
                 collection_name=self.COLLECTION_NAME,
                 with_payload=True,
@@ -113,6 +128,7 @@ class qdrantClient:
 
     def delete_document(self, source: str) -> bool:
         try:
+            self._ensure_source_index()
             results, _ = self._instance.scroll(
                 collection_name=self.COLLECTION_NAME,
                 scroll_filter=qmodels.Filter(
