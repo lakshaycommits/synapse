@@ -85,6 +85,7 @@ User Query
 | Web search | Tavily |
 | Frontend | React 18 + Vite, react-markdown |
 | Streaming | Server-Sent Events (SSE) via `graph.astream_events` |
+| GitHub API | PyGithub |
 | Containerization | Docker (multi-stage) + Docker Compose |
 | Deployment | Render |
 
@@ -112,6 +113,13 @@ User Query
 - Structured logging with per-request UUID — every log line is traceable to a single request
 - Health endpoint — `/health` reports live status of Qdrant and Redis
 
+**GitHub integration**
+- Manual sync via `POST /github/sync` — fetches all issues (with comments), PRs (with review comments + changed files), and code files from a branch; ingests each as a formatted markdown document
+- Real-time updates via webhook — `POST /github/webhook` handles `issues`, `pull_request`, and `push` events; HMAC-SHA256 signature verification via `GITHUB_WEBHOOK_SECRET`
+- File size guard — skips files over 500 KB; allowed extensions: `.py`, `.ts`, `.tsx`, `.js`, `.md`, `.yaml`, `.yml`
+- Plugs directly into the existing ingestion pipeline — GitHub content goes through the same chunking, deduplication (SHA-256), and embedding path as manually uploaded files
+- Dedicated GitHub tab in the UI with sync form and webhook setup instructions
+
 **Frontend**
 - Streaming answer with blinking cursor during inference
 - Markdown rendering (headers, code blocks, tables, inline code) via react-markdown + remark-gfm
@@ -131,6 +139,8 @@ User Query
 | `DELETE` | `/rag/documents?source=<name>` | Remove a document and all its chunks from the index |
 | `POST` | `/agents/query` | Submit a query, get full JSON response |
 | `POST` | `/agents/stream` | Submit a query, get token-streamed SSE response |
+| `POST` | `/github/sync` | Trigger a full sync of a GitHub repository |
+| `POST` | `/github/webhook` | Receive real-time GitHub webhook events |
 
 ### `/agents/stream` — SSE event types
 
@@ -193,6 +203,10 @@ REDIS_URL=redis://localhost:6379
 
 # Re-ranking (set false to disable on memory-constrained environments)
 ENABLE_RERANKING=true
+
+# GitHub integration
+GITHUB_TOKEN=ghp_...
+GITHUB_WEBHOOK_SECRET=
 ```
 
 ### Run with Docker (recommended)
@@ -271,7 +285,6 @@ docker compose down -v             # stop and wipe volumes
 
 ## Roadmap
 
-- [ ] GitHub integration — auto-ingest PRs, issues, and code via webhook
 - [ ] LangFuse observability — LLM traces, token usage, latency per node
 
 ---
