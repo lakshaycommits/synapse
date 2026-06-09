@@ -323,7 +323,7 @@ function GitHubPanel() {
   return (
     <div className="panel">
       <h2>GitHub</h2>
-      <p className="subtitle">Sync a repository to index its issues, pull requests, and code files.</p>
+      <p className="subtitle">Sync a repository to index its issues, pull requests, and code files. Any public GitHub repository works — no authentication required.</p>
 
       <form onSubmit={handleSync} className="gh-form">
         <div className="gh-fields">
