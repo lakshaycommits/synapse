@@ -113,19 +113,25 @@ class qdrantClient:
 
     def delete_document(self, source: str) -> bool:
         try:
-            self._instance.delete(
+            results, _ = self._instance.scroll(
                 collection_name=self.COLLECTION_NAME,
-                points_selector=qmodels.FilterSelector(
-                    filter=qmodels.Filter(
-                        must=[
-                            qmodels.FieldCondition(
-                                key="metadata.source",
-                                match=qmodels.MatchValue(value=source),
-                            )
-                        ]
-                    )
+                scroll_filter=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(
+                            key="metadata.source",
+                            match=qmodels.MatchValue(value=source),
+                        )
+                    ]
                 ),
+                with_payload=False,
+                limit=10000,
             )
+            ids = [point.id for point in results]
+            if ids:
+                self._instance.delete(
+                    collection_name=self.COLLECTION_NAME,
+                    points_selector=qmodels.PointIdsList(points=ids),
+                )
             return True
         except Exception:
             logger.exception("Failed to delete document %r", source)
